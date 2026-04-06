@@ -1,0 +1,40 @@
+# NEUROGUARD — Python dependencies
+# Install inside the venv: pip install -r requirements.txt
+# Machine: macOS Apple Silicon — PyTorch MPS acceleration enabled
+
+# ── Deep learning ──────────────────────────────────────────────────────────
+torch==2.3.1          # MPS support stable from 2.x onward
+torchvision==0.18.1   # needed by some torch utilities
+
+# ── Data science ───────────────────────────────────────────────────────────
+numpy>=1.26,<2.0
+pandas>=2.2,<3.0
+scikit-learn>=1.4,<2.0  # RobustScaler, IsolationForest, OneClassSVM baselines
+scipy>=1.13              # percentile, statistical tests
+
+# ── Feature explanation ────────────────────────────────────────────────────
+shap>=0.45            # SHAP values for top-3 feature attribution on alerts
+
+# ── Hyperparameter tuning ─────────────────────────────────────────────────
+optuna>=3.6           # Bayesian hyperparameter search (src/training/tune.py)
+
+# ── Logging ────────────────────────────────────────────────────────────────
+loguru>=0.7           # structured logging throughout the codebase
+
+# ── Config ─────────────────────────────────────────────────────────────────
+python-dotenv>=1.0    # loads .env into os.environ
+
+# ── API server ─────────────────────────────────────────────────────────────
+fastapi>=0.111        # REST control API
+uvicorn[standard]>=0.29  # ASGI server
+
+# ── Time-series storage ────────────────────────────────────────────────────
+influxdb-client>=1.43  # write anomaly scores to InfluxDB
+
+# ── Visualization (notebook exploration) ──────────────────────────────────
+matplotlib>=3.9
+umap-learn>=0.5       # UMAP embedding space visualization for Grafana panel
+
+# ── Testing ────────────────────────────────────────────────────────────────
+pytest>=8.2
+pytest-cov>=5.0       # coverage reports

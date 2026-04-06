@@ -1,0 +1,72 @@
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Virtual environment ───────────────────────────────────────
+venv/
+env/
+.venv/
+
+# ── macOS ─────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Claude Code internals (project management — not source) ───
+CLAUDE.md
+.claude/
+
+# ── Datasets (large files — too big for GitHub) ───────────────
+data/raw/
+data/processed/window_dataset.pkl
+data/processed/dna/
+
+# ── Model checkpoints (large binaries) ───────────────────────
+models/checkpoints/best_model.pt
+models/checkpoints/scaler.pkl
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Environment secrets ───────────────────────────────────────
+.env
+*.env
+
+# ── Jupyter ───────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── LaTeX build artifacts ─────────────────────────────────────
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.bbl
+paper/*.blg
+paper/*.synctex.gz
+paper/*.fls
+paper/*.fdb_latexmk
+
+# ── Generated pairs ───────────────────────────────────────────
+data/pairs/

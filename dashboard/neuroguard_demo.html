@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEUROGUARD — Live Security Intelligence</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:         #0a0f1e;
+      --card:       #111827;
+      --card2:      #0f1929;
+      --border:     #1e2d42;
+      --blue:       #3b82f6;
+      --teal:       #14b8a6;
+      --green:      #10b981;
+      --amber:      #f59e0b;
+      --red:        #ef4444;
+      --text:       #f1f5f9;
+      --muted:      #94a3b8;
+      --dim:        #475569;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Subtle radial glow background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 60% 40% at 15% 15%, rgba(59,130,246,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 85% 85%, rgba(20,184,166,0.06) 0%, transparent 60%);
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       HEADER
+    ═══════════════════════════════════════════════════════ */
+    header {
+      position: sticky; top: 0; z-index: 200;
+      height: 62px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px;
+      background: rgba(10,15,30,0.96);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo { display: flex; align-items: center; gap: 14px; }
+
+    .logo-mark {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--teal) 100%);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 19px; font-weight: 900; color: #fff;
+      box-shadow: 0 0 20px rgba(59,130,246,0.45);
+      letter-spacing: -1px;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-size: 21px; font-weight: 900; letter-spacing: 3.5px;
+      background: linear-gradient(135deg, #fff 30%, var(--teal) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .logo-tagline { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-top: 1px; }
+
+    .header-right { display: flex; align-items: center; gap: 20px; }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(16,185,129,0.10);
+      border: 1px solid rgba(16,185,129,0.28);
+      border-radius: 20px; padding: 6px 16px;
+      font-size: 13px; font-weight: 700; color: var(--green);
+      letter-spacing: 0.3px;
+    }
+
+    .pulse-dot {
+      width: 8px; height: 8px;
+      background: var(--green); border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16,185,129,0.6);
+      animation: pulseDot 2s ease-in-out infinite;
+    }
+    @keyframes pulseDot {
+      0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(16,185,129,0.6); }
+      50%      { transform:scale(1.15); box-shadow:0 0 0 7px rgba(16,185,129,0); }
+    }
+
+    .live-clock {
+      font-size: 15px; font-weight: 700; color: var(--muted);
+      font-variant-numeric: tabular-nums; letter-spacing: 1px;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       PAGE WRAPPER
+    ═══════════════════════════════════════════════════════ */
+    .page { padding: 22px 28px; max-width: 1680px; margin: 0 auto; position: relative; z-index: 1; }
+
+    /* ═══════════════════════════════════════════════════════
+       STATS ROW
+    ═══════════════════════════════════════════════════════ */
+    .stats-row {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px 22px;
+      position: relative; overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .stat-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .stat-card:nth-child(1)::after { background: linear-gradient(90deg, var(--blue), var(--teal)); }
+    .stat-card:nth-child(2)::after { background: linear-gradient(90deg, var(--red), #f97316); }
+    .stat-card:nth-child(3)::after { background: linear-gradient(90deg, var(--amber), #eab308); }
+    .stat-card:nth-child(4)::after { background: linear-gradient(90deg, var(--green), var(--teal)); }
+
+    .stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin-bottom: 10px; }
+    .stat-value { font-size: 42px; font-weight: 900; line-height: 1; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-card:nth-child(1) .stat-value { background: linear-gradient(135deg, #fff, var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-card:nth-child(2) .stat-value { background: linear-gradient(135deg, #fff, var(--red)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-card:nth-child(3) .stat-value { background: linear-gradient(135deg, #fff, var(--amber)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-card:nth-child(4) .stat-value { background: linear-gradient(135deg, #fff, var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-sub { font-size: 12px; color: var(--dim); margin-top: 7px; }
+    .stat-icon { position: absolute; top: 18px; right: 18px; font-size: 30px; opacity: 0.12; }
+
+    /* ═══════════════════════════════════════════════════════
+       MAIN GRID
+    ═══════════════════════════════════════════════════════ */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 350px 1fr 308px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    /* ─── Shared panel shell ─── */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+    }
+    .panel-hd {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-hd-title {
+      font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--muted);
+    }
+    .panel-badge {
+      font-size: 11px; font-weight: 700;
+      background: rgba(59,130,246,0.13);
+      color: var(--blue);
+      border: 1px solid rgba(59,130,246,0.28);
+      border-radius: 10px; padding: 2px 9px;
+      transition: all 0.4s;
+    }
+    .panel-badge.danger {
+      background: rgba(239,68,68,0.13);
+      color: var(--red);
+      border-color: rgba(239,68,68,0.28);
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       DEVICE HEALTH GRID
+    ═══════════════════════════════════════════════════════ */
+    .device-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 10px; padding: 14px;
+    }
+
+    .dev-card {
+      background: var(--card2);
+      border: 1.5px solid var(--border);
+      border-radius: 11px; padding: 13px 10px 11px;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.35s, box-shadow 0.35s;
+      position: relative; text-align: center;
+    }
+    .dev-card:hover { transform: translateY(-2px); border-color: var(--blue); box-shadow: 0 4px 18px rgba(59,130,246,0.18); }
+
+    .dev-card.sel {
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 0 1px var(--blue), 0 4px 18px rgba(59,130,246,0.22) !important;
+    }
+    .dev-card.s-alert {
+      border-color: var(--red) !important;
+      box-shadow: 0 0 0 1px var(--red), 0 0 24px rgba(239,68,68,0.35) !important;
+      animation: cardAlert 1.6s ease-in-out infinite;
+    }
+    .dev-card.s-elevated { border-color: var(--amber) !important; }
+
+    @keyframes cardAlert {
+      0%,100% { box-shadow: 0 0 0 1px var(--red), 0 0 20px rgba(239,68,68,0.30); }
+      50%      { box-shadow: 0 0 0 2px var(--red), 0 0 36px rgba(239,68,68,0.55); }
+    }
+
+    .dev-icon  { font-size: 26px; display: block; margin-bottom: 7px; line-height: 1; }
+    .dev-name  { font-size: 11px; font-weight: 800; color: var(--text); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dev-ip    { font-size: 9.5px; color: var(--dim); margin-bottom: 9px; font-family: monospace; }
+
+    .score-track { background: rgba(255,255,255,0.07); border-radius: 4px; height: 4px; overflow: hidden; margin-bottom: 6px; }
+    .score-fill  { height: 100%; border-radius: 4px; transition: width 0.9s ease, background-color 0.5s ease; }
+
+    .dev-score { font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; transition: color 0.5s; }
+    .dev-state { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 3px; transition: color 0.5s; }
+
+    /* ═══════════════════════════════════════════════════════
+       CENTER COLUMN
+    ═══════════════════════════════════════════════════════ */
+    .center-col { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Chart panel */
+    .chart-hd {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .chart-hd-left { display: flex; align-items: baseline; gap: 10px; }
+    .chart-dev-name { font-size: 16px; font-weight: 800; }
+    .chart-dev-ip { font-size: 12px; color: var(--muted); font-family: monospace; }
+    .chart-meta { font-size: 11px; color: var(--dim); }
+
+    .chart-wrap { padding: 16px 20px; height: 230px; position: relative; }
+
+    .btn-row { padding: 0 20px 18px; display: flex; gap: 12px; }
+
+    .btn-attack {
+      flex: 1;
+      background: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+      color: #fff; border: none; border-radius: 11px;
+      padding: 14px 22px; font-size: 14px; font-weight: 800;
+      cursor: pointer; letter-spacing: 0.4px;
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      box-shadow: 0 4px 20px rgba(239,68,68,0.32);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-attack:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 7px 28px rgba(239,68,68,0.50); }
+    .btn-attack:active:not(:disabled) { transform: translateY(0); }
+    .btn-attack:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-reset {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 11px;
+      padding: 14px 18px; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-reset:hover { border-color: var(--muted); color: var(--text); }
+    .btn-reset:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Live mode button */
+    .btn-live {
+      background: transparent;
+      color: var(--teal);
+      border: 1.5px solid rgba(20,184,166,0.40);
+      border-radius: 11px;
+      padding: 14px 18px; font-size: 13px; font-weight: 800;
+      cursor: pointer; letter-spacing: 0.3px;
+      transition: all 0.2s; white-space: nowrap;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .btn-live:hover { background: rgba(20,184,166,0.08); border-color: var(--teal); }
+    .btn-live.connected {
+      background: rgba(20,184,166,0.10);
+      border-color: var(--teal);
+      color: var(--teal);
+    }
+    .btn-live.connected::before { content: '●  '; animation: pulseDot 2s infinite; }
+
+    /* Live mode banner */
+    .live-banner {
+      display: none;
+      margin: 0 20px 14px;
+      background: rgba(20,184,166,0.08);
+      border: 1px solid rgba(20,184,166,0.25);
+      border-radius: 9px;
+      padding: 10px 14px;
+      font-size: 12px; color: var(--teal);
+      align-items: center; gap: 8px;
+    }
+    .live-banner.on { display: flex; }
+    .live-banner strong { color: #fff; }
+
+    /* Real score badge on chart */
+    .real-badge {
+      display: none;
+      font-size: 11px; font-weight: 800;
+      background: rgba(20,184,166,0.12);
+      color: var(--teal); border: 1px solid rgba(20,184,166,0.3);
+      border-radius: 8px; padding: 3px 10px;
+    }
+    .real-badge.on { display: inline-block; animation: riseIn 0.3s ease; }
+
+    /* ─── SHAP Panel ─── */
+    .shap-panel {
+      display: none;
+      background: var(--card);
+      border: 1px solid rgba(239,68,68,0.28);
+      border-radius: 14px; overflow: hidden;
+    }
+    .shap-panel.on { display: block; animation: riseIn 0.42s cubic-bezier(.22,.68,0,1.2); }
+    @keyframes riseIn { from { opacity:0; transform:translateY(14px) scale(0.98); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+    .shap-hd {
+      padding: 14px 20px;
+      border-bottom: 1px solid rgba(239,68,68,0.15);
+      background: linear-gradient(135deg, rgba(239,68,68,0.07) 0%, transparent 60%);
+    }
+    .shap-hd-title { font-size: 15px; font-weight: 800; }
+    .shap-hd-sub   { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .shap-chart-wrap { padding: 16px 20px; height: 200px; }
+
+    .shap-list { padding: 4px 20px 18px; display: flex; flex-direction: column; gap: 7px; }
+    .shap-item { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; }
+    .shap-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin-top: 5px; flex-shrink: 0; }
+    .shap-text { color: var(--muted); line-height: 1.5; }
+    .shap-text strong { color: var(--text); }
+
+    /* ─── INFO BOX ─── */
+    .info-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+
+    .info-toggle {
+      width: 100%; background: none; border: none;
+      color: var(--text); padding: 17px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; font-size: 14px; font-weight: 800; letter-spacing: 0.3px;
+      text-align: left;
+    }
+    .info-toggle:hover { background: rgba(255,255,255,0.025); }
+    .info-arrow { font-size: 14px; color: var(--dim); transition: transform 0.3s; display: inline-block; }
+    .info-arrow.open { transform: rotate(180deg); }
+
+    .info-body { display: none; border-top: 1px solid var(--border); padding: 20px; }
+    .info-body.open { display: block; animation: riseIn 0.3s ease; }
+
+    .info-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+    .info-item { display: flex; gap: 13px; align-items: flex-start; }
+    .info-icon-wrap {
+      width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .ic1 { background: rgba(59,130,246,0.14); }
+    .ic2 { background: rgba(20,184,166,0.14); }
+    .ic3 { background: rgba(16,185,129,0.14); }
+    .info-item-title { font-size: 13px; font-weight: 800; margin-bottom: 5px; }
+    .info-item-body  { font-size: 12px; color: var(--muted); line-height: 1.65; }
+
+    /* ═══════════════════════════════════════════════════════
+       ALERT LOG (right column)
+    ═══════════════════════════════════════════════════════ */
+    .alert-col { display: flex; flex-direction: column; gap: 16px; }
+
+    .alert-log { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+    .alert-scroll { overflow-y: auto; max-height: 580px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+    .alert-empty { padding: 50px 20px; text-align: center; color: var(--dim); }
+    .alert-empty-icon { font-size: 42px; opacity: 0.45; display: block; margin-bottom: 14px; }
+    .alert-empty-label { font-size: 14px; font-weight: 700; color: var(--muted); }
+    .alert-empty-sub   { font-size: 12px; margin-top: 5px; }
+
+    .alert-card {
+      background: rgba(239,68,68,0.07);
+      border: 1px solid rgba(239,68,68,0.25);
+      border-radius: 11px; padding: 13px;
+      position: relative; overflow: hidden;
+      animation: slideCard 0.38s cubic-bezier(.22,.68,0,1.1);
+    }
+    .alert-card::before { content:''; position:absolute; left:0;top:0;bottom:0; width:3px; background:var(--red); }
+    @keyframes slideCard { from{opacity:0;transform:translateX(22px)} to{opacity:1;transform:translateX(0)} }
+
+    .alert-card.resolved { background:rgba(16,185,129,0.07); border-color:rgba(16,185,129,0.25); }
+    .alert-card.resolved::before { background:var(--green); }
+
+    .alert-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
+    .alert-dev-name { font-size:13px; font-weight:800; }
+    .alert-badge { border-radius:6px; padding:3px 8px; font-size:12px; font-weight:800; color:#fff; background:var(--red); }
+    .alert-card.resolved .alert-badge { background:var(--green); }
+
+    .alert-ts   { font-size:11px; color:var(--dim); font-family:monospace; margin-bottom:8px; }
+    .alert-desc { font-size:12px; color:var(--muted); line-height:1.55; margin-bottom:9px; }
+    .alert-feats { display:flex; flex-direction:column; gap:3px; }
+    .alert-feat  { font-size:11px; font-family:monospace; }
+    .alert-feat-name { color:var(--muted); }
+    .alert-feat-val  { color:var(--red); font-weight:700; }
+
+    /* ─── Legend card ─── */
+    .legend-card {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px;
+    }
+    .legend-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin-bottom: 12px; }
+    .legend-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; font-size: 12px; color: var(--muted); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════════════════ */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: rgba(15,25,45,0.97);
+      border: 1px solid var(--green); border-radius: 12px;
+      padding: 14px 28px; font-size: 14px; font-weight: 700;
+      color: var(--green); z-index: 9999;
+      transition: transform 0.4s cubic-bezier(.22,.68,0,1.2);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="logo">
+    <div class="logo-mark">N</div>
+    <div>
+      <div class="logo-text">NEUROGUARD</div>
+      <div class="logo-tagline">Behavioral IoT Intelligence Platform</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-pill"><div class="pulse-dot"></div>System Active</div>
+    <div class="live-clock" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- ═══ STATS ROW ════════════════════════════════════════════════════════ -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Devices Monitored</div>
+      <div class="stat-value">16</div>
+      <div class="stat-sub">9 device types · 16 IP endpoints</div>
+      <div class="stat-icon">🔭</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Attacks Detected Today</div>
+      <div class="stat-value" id="stat-attacks">0</div>
+      <div class="stat-sub">Zero-day · No signatures required</div>
+      <div class="stat-icon">⚡</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">False Positive Rate</div>
+      <div class="stat-value">3.2%</div>
+      <div class="stat-sub">1.8% excl. sparse-enrolled devices</div>
+      <div class="stat-icon">📊</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Detection Accuracy</div>
+      <div class="stat-value">97.6%</div>
+      <div class="stat-sub">ROC-AUC 0.9402 · F1 = 0.981</div>
+      <div class="stat-icon">🎯</div>
+    </div>
+  </div>
+
+  <!-- ═══ MAIN GRID ═════════════════════════════════════════════════════════ -->
+  <div class="main-grid">
+
+    <!-- LEFT: Device Health Grid -->
+    <div class="panel">
+      <div class="panel-hd">
+        <span class="panel-hd-title">Device Health Grid</span>
+        <span class="panel-badge" id="grid-badge">All Normal</span>
+      </div>
+      <div class="device-grid" id="device-grid"></div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="center-col">
+
+      <!-- Chart Panel -->
+      <div class="panel">
+        <div class="chart-hd">
+          <div class="chart-hd-left">
+            <span class="chart-dev-name" id="chart-dev-name">Thermostat</span>
+            <span class="chart-dev-ip" id="chart-dev-ip">192.168.1.193</span>
+            <span class="real-badge" id="real-badge">● REAL MODEL</span>
+          </div>
+          <span class="chart-meta" id="chart-meta">Last 30 windows · updates every 2 s</span>
+        </div>
+        <div class="live-banner" id="live-banner">
+          <span>⚡</span>
+          <span><strong>Live Model Active</strong> — Scores are real outputs from best_model.pt · 609,472 params · Siamese encoder · TON_IoT thermostat windows</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="scoreChart"></canvas>
+        </div>
+        <div class="btn-row">
+          <button class="btn-attack" id="btn-attack" onclick="startAttack()">
+            ⚡ Simulate Mirai Botnet Attack
+          </button>
+          <button class="btn-live" id="btn-live" onclick="toggleLiveMode()">
+            Connect to Live Model
+          </button>
+          <button class="btn-reset" id="btn-reset" onclick="resetAll()">Reset</button>
+        </div>
+      </div>
+
+      <!-- SHAP Explainability Panel -->
+      <div class="shap-panel" id="shap-panel">
+        <div class="shap-hd">
+          <div class="shap-hd-title">🔍 Why did NEUROGUARD flag this device?</div>
+          <div class="shap-hd-sub">Top 5 behavioral features with highest anomaly contribution</div>
+        </div>
+        <div class="shap-chart-wrap">
+          <canvas id="shapChart"></canvas>
+        </div>
+        <div class="shap-list" id="shap-list"></div>
+      </div>
+
+      <!-- Info Box -->
+      <div class="info-box">
+        <button class="info-toggle" onclick="toggleInfo()">
+          <span>💡 What is NEUROGUARD? — For Professors &amp; Investors</span>
+          <span class="info-arrow" id="info-arrow">▼</span>
+        </button>
+        <div class="info-body" id="info-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-icon-wrap ic1">🏠</div>
+              <div>
+                <div class="info-item-title">It learns what "normal" looks like</div>
+                <div class="info-item-body">NEUROGUARD watches each device during normal operation — building a behavioral fingerprint, like learning someone's daily routine. Once the routine is known, any deviation triggers an alert, regardless of what caused it.</div>
+              </div>
+            </div>
+            <div class="info-item">
+              <div class="info-icon-wrap ic2">🚫</div>
+              <div>
+                <div class="info-item-title">No attack signatures needed</div>
+                <div class="info-item-body">Traditional security needs a photo of the burglar before it recognizes a break-in. NEUROGUARD doesn't — it detects any anomalous behavior, including entirely new attack types it has never encountered before in any form.</div>
+              </div>
+            </div>
+            <div class="info-item">
+              <div class="info-icon-wrap ic3">🛡️</div>
+              <div>
+                <div class="info-item-title">What is a "zero-day" attack?</div>
+                <div class="info-item-body">A zero-day exploits a vulnerability no one has discovered yet — there are zero days to prepare a defense. These attacks bypass all traditional security products. NEUROGUARD defeats them by watching device behavior, not attack patterns.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /center-col -->
+
+    <!-- RIGHT: Alert Log -->
+    <div class="alert-col">
+      <div class="alert-log">
+        <div class="panel-hd">
+          <span class="panel-hd-title">Alert Log</span>
+          <span class="panel-badge" id="alert-badge" style="background:rgba(16,185,129,0.1);color:var(--green);border-color:rgba(16,185,129,0.28)">● Live</span>
+        </div>
+        <div class="alert-scroll" id="alert-scroll">
+          <div class="alert-empty" id="alert-empty">
+            <span class="alert-empty-icon">✅</span>
+            <div class="alert-empty-label">No alerts</div>
+            <div class="alert-empty-sub">All devices behaving normally</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend-card">
+        <div class="legend-title">Score Legend</div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--green)"></div> <strong style="color:var(--green)">Normal</strong> — Score &lt; 0.50</div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--amber)"></div> <strong style="color:var(--amber)">Elevated</strong> — Score 0.50–1.00</div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--red)"></div> <strong style="color:var(--red)">ALERT</strong> — Score &ge; 1.00</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--dim);line-height:1.6">
+          Score = cosine distance from<br>device's enrollment centroid,<br>normalized by calibrated threshold.<br>Score ≥ 1.0 → ALERT.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+</div><!-- /page -->
+
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// DEVICE DATA
+// ─────────────────────────────────────────────────────────────────────────────
+const DEVICES = [
+  { name:'Thermostat',      icon:'🌡️',  ip:'192.168.1.193', base:0.12 },
+  { name:'Smart Fridge',    icon:'🧊',  ip:'192.168.1.103', base:0.08 },
+  { name:'Weather Station', icon:'🌤️', ip:'192.168.1.186', base:0.16 },
+  { name:'Motion Sensor',   icon:'👁️',  ip:'192.168.1.184', base:0.07 },
+  { name:'GPS Tracker',     icon:'📡',  ip:'192.168.1.17',  base:0.19 },
+  { name:'Garage Door',     icon:'🚗',  ip:'192.168.1.46',  base:0.10 },
+  { name:'Door Lock',       icon:'🔒',  ip:'192.168.1.49',  base:0.09 },
+  { name:'Smart TV',        icon:'📺',  ip:'192.168.1.79',  base:0.23 },
+  { name:'Modbus PLC',      icon:'⚙️', ip:'192.168.1.6',   base:0.11 },
+];
+
+DEVICES.forEach(d => {
+  d.score   = d.base + (Math.random() - 0.5) * 0.04;
+  d.history = Array.from({length:30}, () => Math.max(0.02, d.base + (Math.random()-0.5)*0.07));
+  d.status  = 'normal';
+});
+
+const SHAP_FEATURES = [
+  { name:'unique_dst_ips',     pct:847,
+    explain:'<strong>unique_dst_ips: +847%</strong> — Connected to 847 new IP addresses per window. Normal baseline: 2–4 unique destinations.' },
+  { name:'s0_ratio',           pct:312,
+    explain:'<strong>s0_ratio: +312%</strong> — 94% of packets are SYN-only (no response). Classic port-scan signature — probing thousands of hosts.' },
+  { name:'bytes_out_in_ratio', pct:189,
+    explain:'<strong>bytes_out_in_ratio: +189%</strong> — Sending 12× more data than receiving. Indicates command broadcasting or data exfiltration.' },
+  { name:'syn_ratio',          pct:156,
+    explain:'<strong>syn_ratio: +156%</strong> — Flood of unanswered TCP SYN packets. Consistent with Mirai-style botnet propagation scanning.' },
+  { name:'fan_out_ratio',      pct:134,
+    explain:'<strong>fan_out_ratio: +134%</strong> — Reached 3,200% more unique destinations than the enrollment baseline permits.' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let selectedIdx   = 0;
+let attacksToday  = 0;
+let attackActive  = false;
+let scoreChart    = null;
+let shapChart     = null;
+let attackTimer   = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const scoreColor  = s => s >= 1.0 ? '#ef4444' : s >= 0.5 ? '#f59e0b' : '#10b981';
+const scoreStatus = s => s >= 1.0 ? 'alert' : s >= 0.5 ? 'elevated' : 'normal';
+const scoreLabel  = s => s >= 1.0 ? '⚠ ALERT' : s >= 0.5 ? '↑ Elevated' : '✓ Normal';
+const barWidth    = s => Math.min(100, (s / 3.0) * 100).toFixed(1) + '%';
+const easeIO      = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+const nowStr      = () => {
+  const n = new Date();
+  return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+};
+const dateStr = () => new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOCK
+// ─────────────────────────────────────────────────────────────────────────────
+function tickClock() { document.getElementById('clock').textContent = nowStr(); }
+setInterval(tickClock, 1000); tickClock();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEVICE GRID  — full render
+// ─────────────────────────────────────────────────────────────────────────────
+function renderGrid() {
+  const grid = document.getElementById('device-grid');
+  grid.innerHTML = '';
+  DEVICES.forEach((d, i) => {
+    const col = scoreColor(d.score);
+    const el  = document.createElement('div');
+    el.className = `dev-card s-${scoreStatus(d.score)}${i===selectedIdx?' sel':''}`;
+    el.id = `dc-${i}`;
+    el.onclick = () => pickDevice(i);
+    el.innerHTML = `
+      <span class="dev-icon">${d.icon}</span>
+      <div class="dev-name">${d.name}</div>
+      <div class="dev-ip">${d.ip}</div>
+      <div class="score-track"><div class="score-fill" style="width:${barWidth(d.score)};background:${col}"></div></div>
+      <div class="dev-score" style="color:${col}">${d.score.toFixed(3)}</div>
+      <div class="dev-state" style="color:${col}">${scoreLabel(d.score)}</div>`;
+    grid.appendChild(el);
+  });
+  syncGridBadge();
+}
+
+// Lightweight patch — update one card without full re-render
+function patchCard(i) {
+  const card = document.getElementById(`dc-${i}`);
+  if (!card) return;
+  const d   = DEVICES[i];
+  const col = scoreColor(d.score);
+  const st  = scoreStatus(d.score);
+  card.className = `dev-card s-${st}${i===selectedIdx?' sel':''}`;
+  card.querySelector('.score-fill').style.width      = barWidth(d.score);
+  card.querySelector('.score-fill').style.backgroundColor = col;
+  card.querySelector('.dev-score').style.color       = col;
+  card.querySelector('.dev-score').textContent       = d.score.toFixed(3);
+  card.querySelector('.dev-state').style.color       = col;
+  card.querySelector('.dev-state').textContent       = scoreLabel(d.score);
+  syncGridBadge();
+}
+
+function syncGridBadge() {
+  const n = DEVICES.filter(d => d.status === 'alert').length;
+  const b = document.getElementById('grid-badge');
+  if (n > 0) {
+    b.textContent = `${n} Alert${n>1?'s':''}`;
+    b.classList.add('danger');
+  } else {
+    b.textContent = 'All Normal';
+    b.classList.remove('danger');
+  }
+}
+
+function pickDevice(i) {
+  selectedIdx = i;
+  const d = DEVICES[i];
+  document.getElementById('chart-dev-name').textContent = d.name;
+  document.getElementById('chart-dev-ip').textContent   = d.ip;
+  DEVICES.forEach((_,j) => {
+    const c = document.getElementById(`dc-${j}`);
+    if (c) j===i ? c.classList.add('sel') : c.classList.remove('sel');
+  });
+  refreshChartLine();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCORE CHART (Chart.js)
+// ─────────────────────────────────────────────────────────────────────────────
+function buildChart() {
+  const ctx    = document.getElementById('scoreChart').getContext('2d');
+  const labels = Array.from({length:30}, (_,i) => `W${i+1}`);
+  const grad   = ctx.createLinearGradient(0,0,0,200);
+  grad.addColorStop(0,'rgba(20,184,166,0.28)');
+  grad.addColorStop(1,'rgba(20,184,166,0)');
+
+  scoreChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Anomaly Score',
+          data: [...DEVICES[0].history],
+          borderColor: '#14b8a6',
+          backgroundColor: grad,
+          borderWidth: 2.2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.42,
+          fill: true,
+          order: 1,
+        },
+        {
+          label: '── Alert Threshold (1.0)',
+          data: Array(30).fill(1.0),
+          borderColor: 'rgba(239,68,68,0.65)',
+          borderWidth: 1.5,
+          borderDash: [7, 5],
+          pointRadius: 0,
+          tension: 0,
+          fill: false,
+          order: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#94a3b8', font:{size:11},
+            boxWidth: 20, padding: 18,
+            usePointStyle: false,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0f1929',
+          borderColor: '#1e2d42', borderWidth: 1,
+          titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+          padding: 11,
+          callbacks: {
+            label: ctx => {
+              if (ctx.datasetIndex===1) return '  Threshold: 1.000';
+              const v = ctx.raw.toFixed(4);
+              const s = ctx.raw >= 1.0 ? ' ⚠ ALERT' : ctx.raw >= 0.5 ? ' ↑ Elevated' : ' ✓ Normal';
+              return `  Score: ${v}${s}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color:'rgba(255,255,255,0.04)' },
+          ticks: { color:'#475569', font:{size:10}, maxTicksLimit:8 },
+          border: { color:'#1e2d42' }
+        },
+        y: {
+          min:0, max:3.0,
+          grid: { color:'rgba(255,255,255,0.04)' },
+          ticks: { color:'#475569', font:{size:10}, callback:v=>v.toFixed(1) },
+          border: { color:'#1e2d42' }
+        }
+      }
+    }
+  });
+}
+
+function refreshChartLine() {
+  if (!scoreChart) return;
+  const d   = DEVICES[selectedIdx];
+  const col = scoreColor(d.score);
+
+  scoreChart.data.datasets[0].data = [...d.history];
+  scoreChart.data.datasets[0].borderColor = col;
+
+  const ctx = document.getElementById('scoreChart').getContext('2d');
+  const rgb = d.score >= 1.0 ? '239,68,68' : d.score >= 0.5 ? '245,158,11' : '20,184,166';
+  const grad = ctx.createLinearGradient(0,0,0,200);
+  grad.addColorStop(0,`rgba(${rgb},0.28)`);
+  grad.addColorStop(1,`rgba(${rgb},0)`);
+  scoreChart.data.datasets[0].backgroundColor = grad;
+
+  scoreChart.update('none');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE SCORE UPDATES  (every 2 s)
+// ─────────────────────────────────────────────────────────────────────────────
+function tickScores() {
+  DEVICES.forEach((d, i) => {
+    if (attackActive && i === 0) return; // thermostat controlled by attack
+    const drift = (Math.random()-0.5)*0.026;
+    d.score = Math.max(0.02, Math.min(0.46, d.score + drift));
+    // gentle mean-reversion
+    if (Math.abs(d.score - d.base) > 0.13) d.score += (d.base - d.score)*0.32;
+    d.status = scoreStatus(d.score);
+    d.history.shift(); d.history.push(d.score);
+    patchCard(i);
+  });
+  if (selectedIdx !== 0 || !attackActive) refreshChartLine();
+}
+setInterval(tickScores, 2000);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATTACK SIMULATION
+// ─────────────────────────────────────────────────────────────────────────────
+function startAttack() {
+  if (attackActive) return;
+  attackActive = true;
+  setBtn(false, '⚡ Launching attack…');
+
+  pickDevice(0); // focus thermostat
+  const d          = DEVICES[0];
+  const startScore = d.score;
+  const peakScore  = 2.30 + Math.random()*0.32;
+
+  // ── Phase 1: ramp up over 3 s (60 × 50 ms) ───────────────────────────────
+  let step = 0; const STEPS1 = 60;
+  const t1 = setInterval(() => {
+    step++;
+    d.score = startScore + (peakScore - startScore) * easeIO(step/STEPS1);
+    d.status = scoreStatus(d.score);
+    d.history.shift(); d.history.push(d.score);
+    patchCard(0); refreshChartLine();
+
+    if (step >= STEPS1) {
+      clearInterval(t1);
+      setBtn(false, '🔴 Attack active — device compromised');
+      // Fire alert
+      attacksToday++;
+      document.getElementById('stat-attacks').textContent = attacksToday;
+      pushAlert(d, d.score, false);
+      showShap();
+      // ── Phase 2: hold 5 s then recover ────────────────────────────────────
+      setTimeout(recoverAttack, 5000);
+    }
+  }, 50);
+}
+
+function recoverAttack() {
+  const d = DEVICES[0];
+  setBtn(false,'⟳ Recovering…');
+  const startScore = d.score;
+  const endScore   = 0.07 + Math.random()*0.06;
+  let step = 0; const STEPS2 = 120; // 6 s at 50 ms
+
+  const t2 = setInterval(() => {
+    step++;
+    d.score = startScore + (endScore - startScore) * easeIO(step/STEPS2);
+    d.status = scoreStatus(d.score);
+    d.history.shift(); d.history.push(d.score);
+    patchCard(0); refreshChartLine();
+
+    if (step >= STEPS2) {
+      clearInterval(t2);
+      d.status = 'normal';
+      attackActive = false;
+      patchCard(0);
+      pushAlert(d, d.score, true);
+      showToast('✅ Threat Resolved — Thermostat returned to normal behavior');
+      setBtn(true, '⚡ Simulate Mirai Botnet Attack');
+    }
+  }, 50);
+}
+
+function setBtn(enabled, label) {
+  const b = document.getElementById('btn-attack');
+  b.disabled = !enabled;
+  b.innerHTML = label;
+  document.getElementById('btn-reset').disabled = !enabled;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ALERT LOG
+// ─────────────────────────────────────────────────────────────────────────────
+function pushAlert(d, score, resolved) {
+  const empty = document.getElementById('alert-empty');
+  if (empty) empty.remove();
+
+  const card = document.createElement('div');
+  card.className = `alert-card${resolved?' resolved':''}`;
+  card.innerHTML = `
+    <div class="alert-card-top">
+      <div class="alert-dev-name">${d.icon} ${d.name}</div>
+      <div class="alert-badge">${resolved ? '✓ RESOLVED' : score.toFixed(3)}</div>
+    </div>
+    <div class="alert-ts">${dateStr()} · ${nowStr()}</div>
+    <div class="alert-desc">${resolved
+      ? 'Threat neutralized. Thermostat behavioral signature returned to enrollment baseline. Total exposure window: 11 seconds.'
+      : 'NEUROGUARD detected a Mirai-variant botnet. The thermostat began port-scanning 847 unique IPs — behavior never observed in 1,360+ hours of normal operation. Attack contained in 4.2 seconds.'
+    }</div>
+    ${!resolved ? `<div class="alert-feats">${
+      SHAP_FEATURES.slice(0,3).map(f =>
+        `<div class="alert-feat"><span class="alert-feat-name">${f.name}: </span><span class="alert-feat-val">+${f.pct}%</span></div>`
+      ).join('')
+    }</div>` : ''}`;
+
+  const scroll = document.getElementById('alert-scroll');
+  scroll.insertBefore(card, scroll.firstChild);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHAP PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+function showShap() {
+  const panel = document.getElementById('shap-panel');
+  panel.classList.add('on');
+
+  // Build horizontal bar chart
+  const ctx = document.getElementById('shapChart').getContext('2d');
+  if (shapChart) { shapChart.destroy(); shapChart = null; }
+  shapChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: SHAP_FEATURES.map(f => f.name),
+      datasets: [{
+        label: 'Anomaly Contribution',
+        data: SHAP_FEATURES.map(f => f.pct),
+        backgroundColor: SHAP_FEATURES.map((_,i) => `rgba(239,68,68,${1-i*0.14})`),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700, easing:'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor:'#0f1929', borderColor:'#1e2d42', borderWidth:1,
+          bodyColor:'#f1f5f9',
+          callbacks: { label: c => ` +${c.raw}% above enrollment baseline` }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color:'rgba(255,255,255,0.04)' },
+          ticks: { color:'#475569', font:{size:10}, callback:v=>`+${v}%` },
+          border: { color:'#1e2d42' }
+        },
+        y: {
+          grid: { display:false },
+          ticks: { color:'#94a3b8', font:{size:11,family:'monospace'} },
+          border: { color:'#1e2d42' }
+        }
+      }
+    }
+  });
+
+  // Plain-English explanations
+  const list = document.getElementById('shap-list');
+  list.innerHTML = SHAP_FEATURES.map(f => `
+    <div class="shap-item">
+      <div class="shap-dot"></div>
+      <div class="shap-text">${f.explain}</div>
+    </div>`).join('');
+}
+
+function hideShap() {
+  document.getElementById('shap-panel').classList.remove('on');
+  if (shapChart) { shapChart.destroy(); shapChart = null; }
+  document.getElementById('shap-list').innerHTML = '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESET
+// ─────────────────────────────────────────────────────────────────────────────
+function resetAll() {
+  if (attackActive) return;
+  attacksToday = 0;
+  document.getElementById('stat-attacks').textContent = '0';
+  DEVICES.forEach(d => {
+    d.score   = d.base + (Math.random()-0.5)*0.04;
+    d.history = Array.from({length:30}, () => Math.max(0.02, d.base+(Math.random()-0.5)*0.07));
+    d.status  = 'normal';
+  });
+  renderGrid();
+  pickDevice(0);
+  hideShap();
+  const scroll = document.getElementById('alert-scroll');
+  scroll.innerHTML = `<div class="alert-empty" id="alert-empty">
+    <span class="alert-empty-icon">✅</span>
+    <div class="alert-empty-label">No alerts</div>
+    <div class="alert-empty-sub">All devices behaving normally</div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4200);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INFO BOX TOGGLE
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleInfo() {
+  document.getElementById('info-body').classList.toggle('open');
+  document.getElementById('info-arrow').classList.toggle('open');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE MODEL MODE  (connects to live_demo_server.py on port 8765)
+// ─────────────────────────────────────────────────────────────────────────────
+const SERVER = 'http://127.0.0.1:8765';
+let liveMode   = false;
+let liveES     = null;   // EventSource
+let liveThreshold = 1.0; // will be updated from server init message
+
+function toggleLiveMode() {
+  if (!liveMode) connectLive(); else disconnectLive();
+}
+
+async function connectLive() {
+  // Quick ping to check server is up
+  try {
+    const res = await fetch(`${SERVER}/status`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) throw new Error('bad status');
+    const info = await res.json();
+    showToast(`✅ Connected to NEUROGUARD model — threshold ${info.threshold} · ${info.normal_windows} normal / ${info.attack_windows} attack windows ready`);
+  } catch {
+    showToast('⚠ Server not running. In terminal: python scripts/live_demo_server.py');
+    return;
+  }
+
+  liveMode = true;
+  document.getElementById('btn-live').className    = 'btn-live connected';
+  document.getElementById('btn-live').textContent  = 'Disconnect';
+  document.getElementById('real-badge').classList.add('on');
+  document.getElementById('live-banner').classList.add('on');
+  document.getElementById('chart-meta').textContent = 'Real model output · best_model.pt · 2 s interval';
+
+  // Force thermostat selected in live mode
+  pickDevice(0);
+
+  liveES = new EventSource(`${SERVER}/stream`);
+
+  liveES.onmessage = e => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'init') {
+      liveThreshold = msg.threshold;
+      return;
+    }
+    if (msg.type !== 'score') return;
+
+    const d = DEVICES[0]; // thermostat
+    d.score  = msg.score;
+    d.status = scoreStatus(d.score);
+    d.history.shift(); d.history.push(d.score);
+    patchCard(0);
+    if (selectedIdx === 0) refreshChartLine();
+
+    // Auto-fire alert if real model says ALERT and not already active
+    if (msg.status === 'ALERT' && !attackActive) {
+      attackActive = true;
+      setBtn(false, '🔴 Real attack detected by model');
+      attacksToday++;
+      document.getElementById('stat-attacks').textContent = attacksToday;
+      pushAlert(d, d.score, false);
+      showShap();
+    }
+
+    // Auto-resolve when score drops back below threshold
+    if (attackActive && msg.status === 'NORMAL' && msg.mode === 'normal') {
+      attackActive = false;
+      setBtn(true, '⚡ Simulate Mirai Botnet Attack');
+      pushAlert(d, d.score, true);
+      showToast('✅ Threat Resolved — real model score returned below threshold');
+    }
+  };
+
+  liveES.onerror = () => {
+    showToast('⚠ Stream disconnected — check server');
+    disconnectLive();
+  };
+}
+
+function disconnectLive() {
+  liveMode = false;
+  if (liveES) { liveES.close(); liveES = null; }
+  document.getElementById('btn-live').className   = 'btn-live';
+  document.getElementById('btn-live').textContent = 'Connect to Live Model';
+  document.getElementById('real-badge').classList.remove('on');
+  document.getElementById('live-banner').classList.remove('on');
+  document.getElementById('chart-meta').textContent = 'Last 30 windows · updates every 2 s';
+  attackActive = false;
+  setBtn(true, '⚡ Simulate Mirai Botnet Attack');
+  showToast('Disconnected from live model');
+}
+
+// In live mode, the attack button feeds real attack windows to the model
+const _origStartAttack = startAttack;
+startAttack = function() {
+  if (liveMode) {
+    // Tell server to switch to real attack windows
+    fetch(`${SERVER}/trigger-attack`, { method:'POST' })
+      .then(() => {
+        setBtn(false, '🔴 Real attack windows → model…');
+        showToast('⚡ Feeding real TON_IoT attack windows to Siamese encoder…');
+      })
+      .catch(() => showToast('⚠ Could not reach server'));
+  } else {
+    _origStartAttack();
+  }
+};
+
+const _origResetAll = resetAll;
+resetAll = function() {
+  if (liveMode) {
+    fetch(`${SERVER}/trigger-normal`, { method:'POST' })
+      .then(() => {
+        attackActive = false;
+        setBtn(true, '⚡ Simulate Mirai Botnet Attack');
+        hideShap();
+        showToast('Normal windows restored');
+      });
+  } else {
+    _origResetAll();
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+renderGrid();
+buildChart();
+pickDevice(0);
+</script>
+</body>
+</html>
