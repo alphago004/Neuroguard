@@ -64,38 +64,29 @@
 
 % =============================================================================
 \begin{abstract}
-The proliferation of IoT devices has dramatically expanded the attack surface
-of modern networks, yet existing intrusion detection systems (IDS) remain
-fundamentally limited by their dependence on known attack signatures.
+Existing intrusion detection systems for IoT networks rely on known attack
+signatures, making them blind to threats they have never seen.
 We present \neuroguard{}, a zero-day IoT compromise detection system that
-learns each device's behavioral identity exclusively from normal traffic ---
-never from attack data --- and raises alerts when a device deviates from its
-established fingerprint.
+learns what normal behavior looks like for each individual device and raises
+an alert when a device stops acting like itself --- without ever training on
+attack data.
 
-\neuroguard{} employs a Siamese neural network with shared encoder weights,
-combining a three-layer feedforward architecture with a Transformer
-self-attention block to capture both feature-level and temporal behavioral
-patterns across 50-flow traffic windows.
-Trained with contrastive loss on 539{,}612 candidate pairs drawn from 1{,}360
-normal windows spanning 16 IoT devices, the encoder maps each
-60-dimensional Zeek flow-feature vector to a 64-dimensional behavioral
-embedding.
-Device-specific alert thresholds are calibrated from enrollment baselines at
-$k \in \{2.5,\,3.0\}$ standard deviations above each device's mean
-embedding distance.
+The system uses a Siamese neural network to map 50-flow traffic windows
+into a 64-dimensional behavioral embedding space. A shared encoder
+combining feedforward layers with a Transformer self-attention block
+is trained with contrastive loss on pairs of normal windows, so that windows
+from the same device cluster together while windows from different devices
+are pushed apart. Each device is then enrolled by computing a baseline
+centroid from held-out normal traffic; a new window triggers an alert if its
+embedding is too far from that centroid.
 
-Evaluated on the TON\_IoT dataset~\cite{alsaedi2020toniot} under a strict
-train-on-normal-only protocol --- attack data withheld from all training,
-scaling, and enrollment phases --- \neuroguard{} achieves a
-\textbf{ROC-AUC of 0.9402}, a \textbf{detection rate of 97.6--98.3\%}, and
-a \textbf{false positive rate of 3.2--6.3\%} across 839 attack windows.
-Per-type detection reaches \textbf{98.7\%} for backdoor and
-\textbf{97.5\%} for ransomware attacks.
-To complement per-window detection of acute threats, we introduce an
-EWMA-based behavioral drift detector that identifies slow, sustained
-compromise --- characteristic of APT activity --- within 15--25 observation
-windows at a 50\% sustained elevation above the enrollment baseline, with
-near-zero false positive rate.
+Evaluated on the TON\_IoT dataset~\cite{alsaedi2020toniot} under a
+strict protocol where no attack data was seen at any stage, \neuroguard{}
+achieves a ROC-AUC of 0.9402, a detection rate of 97.6--98.3\%, and
+an F1 score of 0.9814 across 839 attack windows spanning eight attack types.
+We also introduce a lightweight EWMA-based drift detector that catches
+slow, APT-style compromise that stays below the per-window alert threshold,
+firing within 15--25 windows of sustained behavioral elevation.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -108,89 +99,139 @@ anomaly detection.
 \section{Introduction}
 \label{sec:intro}
 
-The Internet of Things (IoT) has grown to encompass an estimated 17 billion
-connected devices worldwide, embedding networked computation into critical
-infrastructure, healthcare, manufacturing, and consumer
-environments~\cite{statista2023iot}.
-This proliferation has dramatically expanded the network attack surface ---
-and created a detection problem that existing IDS are structurally
-ill-equipped to solve.
+IoT devices are now embedded in nearly every part of modern life --- smart
+home appliances, industrial sensors, healthcare monitors, and critical
+infrastructure all rely on networked devices that are often resource-constrained
+and poorly secured.
+With an estimated 17 billion such devices connected worldwide~\cite{statista2023iot},
+the scale of the attack surface is significant.
+When one of these devices is compromised, the attacker gains a persistent
+foothold in the network, often going undetected for weeks.
 
-\subsection*{The Signature Problem}
-
-Traditional network IDS --- whether rule-based (Snort, Suricata) or
-anomaly-based (statistical profiling, flow whitelisting) --- fundamentally
-depend on prior knowledge of attack patterns.
-A new attack family generates no prior rule match and no known statistical
-signature; this is not a parameter-tuning issue but an architectural
-limitation.
-The 2016 Mirai botnet demonstrated the consequence: hundreds of thousands of
-IoT devices were compromised and weaponized before any signature
+The core problem with defending these devices is that most intrusion detection
+systems (IDS) work by comparing network traffic against a library of known
+attack signatures.
+This works well for attacks that have already been documented, but it completely
+fails for new ones.
+When the Mirai botnet spread in 2016, it compromised hundreds of thousands of
+IoT devices before any signature for it
 existed~\cite{antonakakis2017mirai}.
-Advanced Persistent Threat (APT) actors exploit this gap deliberately,
-operating below per-window detection thresholds for weeks before
-launching final-stage payloads.
+More sophisticated attackers, often called Advanced Persistent Threats (APTs),
+deliberately move slowly and carefully --- staying under detection thresholds
+for months before launching their final payload.
+No amount of fine-tuning a signature-based IDS fixes this, because the problem
+is not the parameters, it is the approach.
 
-\subsection*{The Behavioral Identity Insight}
+The observation that motivated this work is straightforward.
+An IoT device with a fixed function --- a thermostat, a smart door lock, a
+factory sensor --- does roughly the same things on the network every day.
+It connects to the same servers, sends similar sized packets, at similar
+intervals, using the same protocols.
+This behavioral stability makes it possible to build a fingerprint of what that
+specific device's normal traffic looks like.
+Once that fingerprint exists, we no longer need to know anything about attacks.
+We just need to ask: is this device still acting like itself?
+If the answer is no, something is wrong.
 
-A network-connected device with a fixed function --- a thermostat, smart lock,
-or industrial sensor --- exhibits remarkably stable traffic patterns during
-normal operation.
-It communicates with a predictable set of endpoints, at predictable intervals,
-with predictable payload distributions.
-This stability is an asset: a device's normal behavior can be fingerprinted
-with high fidelity from a modest enrollment window, and any sustained
-deviation from that fingerprint is a strong anomaly signal regardless of what
-malware produced it.
+This paper presents \neuroguard{}, a system built around that idea.
+A Siamese neural network is trained on normal traffic from 16 IoT devices to
+learn a behavioral embedding space where windows from the same device cluster
+together and windows from different devices are well-separated.
+Each device is then enrolled by computing a centroid from a small set of
+held-out normal windows.
+At inference time, a new traffic window is flagged as anomalous if its
+embedding is too far from that device's centroid --- regardless of what kind
+of attack, if any, produced it.
+Because the model never trains on attack data, it has no blind spots for
+unknown attack types.
 
-\subsection*{Prior Work and Its Limitations}
-
-Unsupervised anomaly detection methods --- IsolationForest~\cite{liu2008iforest},
-OneClassSVM~\cite{scholkopf1999ocsvm}, and autoencoder-based
-approaches~\cite{mirsky2018kitsune} --- have been applied to IoT traffic,
-but operate on aggregate statistical features and lack per-device identity
-modeling.
-Kitsune~\cite{mirsky2018kitsune} achieves strong results on single-device
-traces but does not generalize across heterogeneous device types without
-retraining.
-Federated approaches~\cite{nguyen2019diot} and flow-based ML
-classifiers~\cite{moustafa2016unswnb15} require either attack labels or
-centralized retraining.
-No prior work combines contrastive identity learning with per-device
-enrollment and EWMA drift detection in a zero-label setting.
-
-\subsection*{Contributions}
-
-This paper makes four technical contributions:
+The main contributions of this work are:
 
 \begin{enumerate}
-  \item \textbf{Per-instance behavioral identity.}
-    We demonstrate that Siamese contrastive learning builds per-device
-    behavioral fingerprints from 50-flow windows alone, achieving an
-    inter-to-intra class embedding separation ratio of $3.08\times$.
+  \item \textbf{Per-device behavioral identity via contrastive learning.}
+    We show that a Siamese network trained only on normal traffic can build
+    per-device fingerprints that achieve an inter-to-intra class embedding
+    separation ratio of $3.08\times$, sufficient for clean anomaly scoring.
 
   \item \textbf{Transformer-augmented behavioral encoder.}
     A Pre-LN Transformer self-attention block~\cite{xiong2020preln} within the
-    shared encoder captures cross-feature behavioral correlations, contributing
-    measurably to the separation ratio without increasing per-window latency.
+    shared encoder captures cross-feature behavioral correlations (e.g., the
+    joint pattern of SYN ratio, ACK ratio, and connection fan-out that
+    characterizes scanning), improving the separation ratio by 30\% compared
+    to a feedforward-only encoder.
 
-  \item \textbf{Enrollment-calibrated scoring.}
-    Device-specific alert thresholds calibrated from enrollment
-    cosine-distance distributions adapt to per-device traffic variability,
-    enabling \neuroguard{} to operate across both tight and variable IoT
-    profiles without manual tuning.
+  \item \textbf{Enrollment-calibrated per-device thresholds.}
+    Alert thresholds derived from each device's own enrollment distribution
+    adapt automatically to per-device variability, requiring no manual
+    threshold tuning across heterogeneous device types.
 
-  \item \textbf{EWMA behavioral drift for APT detection.}
-    A lightweight per-device EWMA drift detector provides complementary
-    coverage for slow, sustained compromise below the per-window alert
-    threshold, firing within 15--25 windows of APT-style score elevation
-    with zero additional false positives on normal traffic.
+  \item \textbf{EWMA drift detection for APT-style compromise.}
+    A lightweight exponentially weighted moving average detector catches
+    slow, sustained behavioral drift that stays below the per-window threshold,
+    firing within 15--25 windows with zero additional false positives on
+    normal traffic.
 \end{enumerate}
 
-Evaluated on TON\_IoT with a strict train-on-normal-only protocol,
-\neuroguard{} achieves ROC-AUC 0.9402, detection rate 97.6--98.3\%, and
-F1\,=\,0.9814 at $k=3.0$ --- without observing a single attack window during
-any phase of model development.
+Evaluated on the TON\_IoT dataset~\cite{alsaedi2020toniot} with no attack data
+used at any stage, \neuroguard{} achieves ROC-AUC 0.9402, detection rate
+97.6--98.3\%, and F1\,=\,0.9814 at $k=3.0$ across 839 attack windows spanning
+eight attack types.
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Signature-Based and Rule-Based IDS}
+
+Tools like Snort and Suricata have been the backbone of network intrusion
+detection for decades.
+They match traffic against hand-written rules or known attack patterns and are
+fast and interpretable.
+Their limitation is that they require prior knowledge of the attack: a new
+malware variant with no existing rule simply passes through.
+NEUROGUARD takes the opposite approach --- it requires no knowledge of attacks
+and instead focuses entirely on what normal looks like.
+
+\subsection{ML-Based Anomaly Detection}
+
+Unsupervised methods like IsolationForest~\cite{liu2008iforest} and
+OneClassSVM~\cite{scholkopf1999ocsvm} estimate a boundary around normal
+training data and flag points outside it as anomalies.
+These methods do not require attack labels, which is useful.
+However, when applied to multi-device IoT traffic, they pool all devices'
+normal windows into one distribution, losing the per-device identity
+information that makes anomaly scores meaningful.
+We demonstrate this empirically in Section~\ref{sec:baselines}: both methods
+achieve less than 4\% detection rate on the same data where \neuroguard{}
+achieves 97.6\%.
+
+Autoencoder-based anomaly detection --- most notably
+Kitsune~\cite{mirsky2018kitsune} --- trains a network to reconstruct normal
+traffic and uses reconstruction error as an anomaly signal.
+Kitsune achieves strong results on single-device traces, but does not handle
+the case where normal windows from multiple different device types are
+present in training, which causes reconstruction quality to become
+independent of device identity.
+
+\subsection{Siamese and Contrastive Learning}
+
+Siamese networks were originally proposed for signature
+verification~\cite{hadsell2006contrastive} and have since been applied to
+face recognition, speaker identification, and one-shot learning.
+The key property --- that a shared encoder is trained to produce nearby
+embeddings for similar inputs and distant embeddings for dissimilar ones ---
+maps directly onto the per-device behavioral fingerprinting problem.
+To our knowledge, this is the first application of Siamese contrastive
+learning to IoT network traffic anomaly detection.
+
+\subsection{Federated and Distributed IoT Detection}
+
+D\"{I}oT~\cite{nguyen2019diot} uses federated learning to build device-type
+behavior models without centralizing traffic data.
+This addresses privacy concerns in deployment but still requires
+device-type labels and does not produce per-device fingerprints.
+\neuroguard{} uses per-device enrollment to achieve device-instance
+specificity without requiring any attack labels or centralized infrastructure.
 
 % =============================================================================
 \section{Methodology}
@@ -421,6 +462,17 @@ The ROC-AUC of 0.9402 is threshold-independent, reflecting strong rank-order
 separation between normal and attack windows.
 At $k=3.0$, \neuroguard{} achieves $\text{F1}=0.9814$ with detection rate
 97.62\% and FPR 3.17\%, exceeding the 90\% detection target.
+Figure~\ref{fig:roc} shows the ROC curve; the curve rises sharply near the
+origin, indicating that high detection rates are achievable at low false
+positive rates.
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{../models/checkpoints/roc_curve.png}
+  \caption{ROC curve for \neuroguard{} on TON\_IoT (839 attack windows,
+           347 normal windows). AUC\,=\,0.9402.}
+  \label{fig:roc}
+\end{figure}
 
 \begin{table}[!t]
   \caption{\neuroguard{} Detection Performance on TON\_IoT}
@@ -560,11 +612,10 @@ scores --- equivalent in spirit to \neuroguard{}'s $k=2.5\sigma$ calibration.
 \subsection{Results}
 
 Table~\ref{tab:baselines} reports detection performance across all methods.
-The performance gap is categorical rather than incremental: all three baselines
-achieve $\text{TPR} < 4\%$ with $\text{F1} < 0.06$, while \neuroguard{}
-achieves $\text{TPR} = 97.6$--$98.3\%$ with $\text{F1} = 0.981$.
-This represents a \textbf{32--51$\times$ improvement in detection rate} and
-a \textbf{16--26$\times$ improvement in F1}.
+The gap is not a small improvement --- it is a collapse of the baselines.
+All three achieve $\text{TPR} < 4\%$ with $\text{F1} < 0.06$, while
+\neuroguard{} achieves $\text{TPR} = 97.6$--$98.3\%$ with $\text{F1} = 0.981$.
+That is a 32--51$\times$ higher detection rate and a 16--26$\times$ higher F1.
 
 \begin{table*}[!t]
   \caption{Comparison of \neuroguard{} Against Baselines
@@ -781,30 +832,36 @@ contrastive learning --- rather than population-level distribution estimation
 On the TON\_IoT benchmark, \neuroguard{} achieves ROC-AUC 0.9402, detection
 rate 97.6--98.3\%, and $\text{F1}=0.9814$ across eight attack types including
 zero-day threats.
-The comparison against three state-of-the-art baselines trained on the same
-data shows that the performance gap is categorical: all baselines achieve
-$\text{TPR} < 4\%$ because they lack the per-device identity representation
-that makes anomaly scores meaningful.
+The comparison against three standard baselines trained on the same data shows
+that per-device identity representation is not an optional improvement --- it
+is what makes the difference between a system that detects 2--3\% of attacks
+and one that detects 97--98\%.
+All three baselines fail for the same structural reason: they model the
+distribution of all normal traffic, not the behavior of a specific device.
 The EWMA drift detector extends coverage to APT-style long-dwell compromise
 with near-zero additional false positive rate, firing within 15--25 observation
 windows of sustained behavioral elevation.
 
-\textbf{Future work} falls along three axes.
-\emph{Cross-dataset generalization:} evaluation on Bot-IoT~\cite{koroniotis2019botiot},
-IoT-23~\cite{garcia2020iot23}, and Kitsune~\cite{mirsky2018kitsune} will test
-whether behavioral embeddings transfer across network environments.
-\emph{Enrollment efficiency:} few-shot or meta-learning approaches could
-reduce the minimum enrollment requirement from 10 to 3--5 windows.
-\emph{Multi-modal fusion:} fusing network flow embeddings with device telemetry
-(temperature, motion, GPS readings present in TON\_IoT) could further tighten
-enrollment baselines for constrained IoT profiles.
+There are three natural directions to extend this work.
+First, the system has only been evaluated on TON\_IoT so far.
+Testing on Bot-IoT~\cite{koroniotis2019botiot}, IoT-23~\cite{garcia2020iot23},
+and Kitsune~\cite{mirsky2018kitsune} would show whether the behavioral
+embeddings transfer to different network environments and device types.
+Second, enrollment currently requires at least 10 normal traffic windows per
+device; few-shot or meta-learning approaches could reduce this to 3--5.
+Third, the TON\_IoT dataset includes device telemetry (temperature readings,
+GPS coordinates, motion sensor data) alongside network logs ---
+fusing these with the network embeddings could tighten the behavioral
+fingerprints considerably, especially for simple sensors with low traffic
+volume.
 
-The behavioral identity framing --- ``is this device still behaving like
-itself?'' --- is fundamentally complementary to signature-based and
-anomaly-based IDS.
-\neuroguard{} is designed to operate as a second-layer detector that is blind
-to attack signatures by construction, making it resilient to the class of
-threats that existing IDS are structurally incapable of detecting.
+The central question that \neuroguard{} answers --- ``is this device still
+acting like itself?'' --- is something that signature-based and
+distribution-based methods simply cannot ask.
+It is a natural complement to existing IDS: deploy it alongside your
+rule-based system and it covers the attacks your rules have never seen.
+That is the class of threats that matters most, and the one that existing
+systems have no answer for.
 
 % =============================================================================
 \appendix
