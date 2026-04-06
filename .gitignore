@@ -70,3 +70,8 @@ paper/*.fdb_latexmk
 
 # ── Generated pairs ───────────────────────────────────────────
 data/pairs/
+
+# ── Internal working drafts ─────────────────────────────────────────────────
+paper/draft_sections.md
+paper/neuroguard_ieee.tex
+paper/*.pdf
