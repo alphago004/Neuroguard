@@ -73,9 +73,8 @@ data/pairs/
 
 # ── Paper and study materials (keep local only) ──────────────────────────────
 paper/
-NEUROGUARD_Study_Guide.md
-NEUROGUARD_Study_Guide.pdf
-NEUROGUARD_Blueprint.docx
-NEUROGUARD_Setup_Guide.docx
+NEUROGUARD_*.md
+NEUROGUARD_*.pdf
+NEUROGUARD_*.docx
 *.docx
 scripts/build_study_guide_pdf.py
