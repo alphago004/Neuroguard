@@ -1,12 +1,12 @@
 """
 NEUROGUARD — Behavioral encoder (one twin of the Siamese network).
 
-Architecture (from CLAUDE.md §4, locked)
+Architecture (locked — matches paper §III-C)
 -----------------------------------------
 Input:  (batch, 60)  — one 50-flow window feature vector per sample
   → Linear(60  → 128)  + BatchNorm1d(128)  + ReLU
   → Linear(128 → 256)  + BatchNorm1d(256)  + ReLU + Dropout(0.3)
-  → TemporalEncoder(d_model=256, nhead=4, num_layers=2)
+  → TemporalEncoder(d_model=256, nhead=4, num_layers=1)
   → Linear(256 → 128)  + ReLU
   → Linear(128 → 64)
 Output: (batch, 64)  — behavioral embedding (L2-normalized at inference)
@@ -40,7 +40,6 @@ bias=0 (PyTorch default). No custom init needed — defaults are sound.
 # ---------------------------------------------------------------------------
 # Standard library
 # ---------------------------------------------------------------------------
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Third-party
@@ -56,7 +55,7 @@ from src.models.transformer import TemporalEncoder
 from src.features.extractor import FEATURE_DIM
 
 # ---------------------------------------------------------------------------
-# Constants (mirror of CLAUDE.md §10)
+# Constants
 # ---------------------------------------------------------------------------
 DEFAULT_INPUT_DIM:    int   = FEATURE_DIM   # 60
 DEFAULT_HIDDEN_1:     int   = 128
@@ -64,7 +63,7 @@ DEFAULT_HIDDEN_2:     int   = 256
 DEFAULT_EMBEDDING_DIM: int  = 64
 DEFAULT_DROPOUT:      float = 0.3
 DEFAULT_NHEAD:        int   = 4
-DEFAULT_TRANSFORMER_LAYERS: int = 2
+DEFAULT_TRANSFORMER_LAYERS: int = 1
 
 
 class BehavioralEncoder(nn.Module):
@@ -81,7 +80,7 @@ class BehavioralEncoder(nn.Module):
         embedding_dim:  Output embedding dimension (default: 64).
         dropout:        Dropout rate after the 256-dim layer (default: 0.3).
         nhead:          Transformer attention heads (default: 4).
-        transformer_layers: Transformer depth (default: 2).
+        transformer_layers: Transformer depth (default: 1).
 
     Example:
         >>> encoder = BehavioralEncoder()
