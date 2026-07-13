@@ -1,0 +1,15 @@
+MULTI-SEED EVALUATION RESULTS
+Seeds: [42, 1, 2, 3, 4]
+
+Per-seed results:
+  seed=42  AUC=0.9863  TPR=0.9964  FPR=0.4954  F1=0.9670  best_epoch=87  elapsed=235s
+  seed= 1  AUC=0.9863  TPR=0.9964  FPR=0.4954  F1=0.9670  best_epoch=76  elapsed=239s
+  seed= 2  AUC=0.9863  TPR=0.9964  FPR=0.4954  F1=0.9670  best_epoch=56  elapsed=243s
+  seed= 3  AUC=0.9863  TPR=0.9964  FPR=0.4954  F1=0.9670  best_epoch=82  elapsed=245s
+  seed= 4  AUC=0.9863  TPR=0.9964  FPR=0.4954  F1=0.9670  best_epoch=91  elapsed=244s
+
+Mean ± Std (n=5):
+  ROC-AUC:  0.9863 ± 0.0000
+  TPR:      0.9964 ± 0.0000
+  FPR:      0.4954 ± 0.0000
+  F1:       0.9670  ± 0.0000
