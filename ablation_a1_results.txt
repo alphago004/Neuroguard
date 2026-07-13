@@ -1,0 +1,14 @@
+ABLATION A1 - NO TRANSFORMER
+best_epoch: 83
+best_val_loss: 0.130271
+intra_mean: 0.3250
+inter_mean: 4.0110
+separation_ratio: 12.3400
+roc_auc: 0.9410
+tpr_25: 0.9976
+fpr_25: 0.0734
+f1_25: 0.9941
+tpr_30: 0.9976
+fpr_30: 0.0734
+f1_30: 0.9941
+total_time_s: 119.1
