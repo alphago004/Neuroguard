@@ -1,0 +1,26 @@
+NEUROGUARD Zero-Shot Cross-Dataset Transfer (TON_IoT → IoT-23)
+encoder: best_model.pt (TON_IoT, no IoT-23 training)
+scaler: scaler_iot23.pkl (IoT-23 benign only)
+roc_auc: 0.8388
+score_gap: -0.6025
+n_normal_windows: 60
+n_attack_windows: 3174
+total_time_s: 6.6
+
+192.168.1.195 (Mirai (DDoS/C&C)):
+  tpr=0.1204  fpr=0.0000  f1=0.2150
+  threshold=0.7695
+  normal_mean=0.1960  attack_mean=0.2356
+  tp=102  fp=0  fn=745  tn=15
+
+192.168.100.113 (Mirai (C&C)):
+  tpr=0.2508  fpr=0.0000  f1=0.4010
+  threshold=0.7822
+  normal_mean=0.2057  attack_mean=0.8926
+  tp=82  fp=0  fn=245  tn=18
+
+192.168.2.5 (Mirai (PortScan)):
+  tpr=0.4755  fpr=0.0000  f1=0.6445
+  threshold=0.8037
+  normal_mean=0.1934  attack_mean=0.9745
+  tp=951  fp=0  fn=1049  tn=27

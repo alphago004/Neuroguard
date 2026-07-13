@@ -1,0 +1,18 @@
+NEUROGUARD IoT-23 Cross-Dataset Validation
+roc_auc: 0.7924
+best_epoch: 14
+n_normal_windows: 60
+n_attack_windows: 3174
+total_time_s: 332.0
+
+192.168.1.195 (Mirai (DDoS/C&C)):
+  tpr=0.9894  fpr=0.2000  f1=0.9929
+  tp=838  fp=3  fn=9  tn=12
+
+192.168.100.113 (Mirai (C&C)):
+  tpr=1.0000  fpr=0.0000  f1=1.0000
+  tp=327  fp=0  fn=0  tn=18
+
+192.168.2.5 (Mirai (PortScan/Attack)):
+  tpr=0.4880  fpr=0.0000  f1=0.6559
+  tp=976  fp=0  fn=1024  tn=27
