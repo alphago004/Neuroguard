@@ -1,45 +1,10 @@
 """
 NEUROGUARD — Training loop for the Siamese behavioral encoder.
 
-Entry point
------------
+Entry point:
     python -m src.training.train [--epochs N] [--batch-size N] [--lr F]
 
-Or import and call train() directly from notebooks / scripts.
-
-Training protocol
------------------
-1.  Load train_test_network.csv → build WindowDataset (or load from cache)
-2.  Fit RobustScaler on train_normal feature vectors ONLY → save scaler.pkl
-3.  Apply scaler to all windows (train + test + attack)
-4.  Build PairDataset (train split) and PairDataset (val split from test_normal)
-5.  Train for up to EPOCHS with:
-      - AdamW (lr=1e-3, weight_decay=1e-4)
-      - CosineAnnealingLR (T_max=EPOCHS)
-      - Early stopping (patience=10 on val loss)
-      - Checkpoint best model by val loss → models/checkpoints/best_model.pt
-6.  After training: compute intra/inter-class distances on val set and log
-
-RobustScaler note
------------------
-RobustScaler is fitted ONLY on train_normal feature vectors. It is then
-applied to ALL windows (train, val, attack) at inference time. This is
-saved to models/checkpoints/scaler.pkl and loaded by scorer.py.
-
-The scaler is critical: raw features span orders of magnitude
-(byte counts 0–10^5, ratios 0–1). Without scaling, the Transformer
-attention is dominated by large-magnitude byte features and the small
-protocol ratio features are invisible.
-
-Validation set
---------------
-We use test_normal windows (the held-out 20%) as the validation set
-during training. This does NOT violate the evaluation protocol because:
-  - These windows contain ONLY normal traffic
-  - The Siamese model never sees attack labels during training
-  - The test_normal set is used again during enrollment in enroll.py —
-    this is intentional: enrollment uses the same distribution the model
-    was validated on
+Or call train() directly from notebooks or scripts.
 """
 
 # ---------------------------------------------------------------------------
@@ -83,16 +48,14 @@ SCALER_PKL     = CHECKPOINT_DIR / "scaler.pkl"
 WINDOW_CACHE   = PROJECT_ROOT / "data" / "processed" / "window_dataset.pkl"
 
 # ---------------------------------------------------------------------------
-# Hyperparameters (mirrors CLAUDE.md §10)
+# Hyperparameters
 # ---------------------------------------------------------------------------
 DEFAULT_EPOCHS        = 100
 DEFAULT_BATCH_SIZE    = 128
 DEFAULT_LR            = 1e-3
 DEFAULT_WEIGHT_DECAY  = 1e-4
 DEFAULT_PATIENCE      = 10
-DEFAULT_DEVICE_CAP    = 50       # stratified cap: prevents .152 (698 windows)
-                                 # from dominating pair distribution. All 16
-                                 # devices contribute equally at ≤50 windows.
+DEFAULT_DEVICE_CAP    = 50       # per-device window cap prevents high-volume devices from dominating pairs
 DEFAULT_N_PAIRS       = 100_000  # pairs per epoch (sampled fresh each epoch)
 
 
@@ -113,19 +76,27 @@ def get_device() -> torch.device:
 # Scaler: fit on train_normal features ONLY
 # ---------------------------------------------------------------------------
 
+def split_internal_val(
+    records: list[WindowRecord],
+    val_frac: float = 0.10,
+) -> tuple[list[WindowRecord], list[WindowRecord]]:
+    """Split train_normal chronologically per device: last val_frac goes to internal_val."""
+    per_device: dict[str, list[WindowRecord]] = {}
+    for r in records:
+        per_device.setdefault(r.device_id, []).append(r)
+
+    actual_train: list[WindowRecord] = []
+    internal_val: list[WindowRecord] = []
+    for recs in per_device.values():
+        recs_sorted = sorted(recs, key=lambda r: r.window_idx)
+        n_val = max(1, int(len(recs_sorted) * val_frac))
+        actual_train.extend(recs_sorted[:-n_val])
+        internal_val.extend(recs_sorted[-n_val:])
+    return actual_train, internal_val
+
+
 def fit_scaler(train_records: list[WindowRecord]) -> RobustScaler:
-    """Fit a RobustScaler on the raw feature vectors of train_normal windows.
-
-    RobustScaler uses median and IQR — resistant to the outliers that are
-    common in network traffic (a single large file transfer can spike byte
-    counts far above the 75th percentile).
-
-    Args:
-        train_records: List of WindowRecord from WindowDataset.train_normal.
-
-    Returns:
-        Fitted RobustScaler instance.
-    """
+    """Fit a RobustScaler on train_normal feature vectors."""
     X = np.stack([r.features for r in train_records])   # (N, 60)
     scaler = RobustScaler()
     scaler.fit(X)
@@ -140,17 +111,7 @@ def apply_scaler(
     records: list[WindowRecord],
     scaler: RobustScaler,
 ) -> list[WindowRecord]:
-    """Return new WindowRecord list with scaled feature vectors.
-
-    Creates new frozen dataclass instances — does not mutate originals.
-
-    Args:
-        records: WindowRecord list to transform.
-        scaler:  Fitted RobustScaler.
-
-    Returns:
-        New list of WindowRecord with scaled float32 features.
-    """
+    """Return new WindowRecord list with scaled feature vectors."""
     if not records:
         return []
     X = np.stack([r.features for r in records])
@@ -178,25 +139,7 @@ def compute_embedding_distances(
     device: torch.device,
     batch_size: int = 256,
 ) -> dict[str, float]:
-    """Compute intra-class and inter-class mean Euclidean distances.
-
-    These are the two most diagnostic numbers for contrastive learning:
-      intra_class_dist: mean distance between windows of the SAME device
-                        → target < 0.5 (tight clusters)
-      inter_class_dist: mean distance between windows of DIFFERENT devices
-                        → target > 1.5 (well-separated clusters)
-
-    A ratio inter/intra > 3.0 indicates strong discriminative power.
-
-    Args:
-        model:      Trained SiameseNetwork in eval mode.
-        records:    WindowRecord list (typically val set).
-        device:     Inference device.
-        batch_size: Embedding batch size (unrelated to pair batch size).
-
-    Returns:
-        Dict with keys: intra_mean, inter_mean, separation_ratio.
-    """
+    """Compute intra-class and inter-class mean Euclidean distances on a set of windows."""
     model.eval()
 
     # Embed all records in batches
@@ -271,24 +214,7 @@ def train(
     use_cache:     bool           = True,
     save_dir:      Path           = CHECKPOINT_DIR,
 ) -> dict:
-    """Train the Siamese encoder and return final metrics.
-
-    Args:
-        csv_path:     Path to train_test_network.csv.
-        epochs:       Max training epochs.
-        batch_size:   DataLoader batch size.
-        lr:           Initial learning rate for AdamW.
-        weight_decay: L2 regularization coefficient.
-        patience:     Early stopping patience (epochs without val improvement).
-        device_cap:   Max windows per device in PairDataset.
-        n_pairs:      Total pairs per dataset (None = full balanced set).
-        use_cache:    Load WindowDataset from cache if available.
-        save_dir:     Directory for best_model.pt and scaler.pkl.
-
-    Returns:
-        Dict with keys: train_loss, val_loss, intra_mean, inter_mean,
-        separation_ratio, best_epoch, total_time_s.
-    """
+    """Train the Siamese encoder and return final metrics."""
     t_start = time.time()
     device  = get_device()
     logger.info(f"Training device: {device}")
@@ -308,6 +234,7 @@ def train(
     logger.info(
         f"Dataset: {stats['num_devices']} devices | "
         f"{stats['train_normal']} train_normal | "
+        f"{stats['enroll_normal']} enroll_normal | "
         f"{stats['test_normal']} test_normal | "
         f"{stats['attack_windows']} attack windows"
     )
@@ -319,13 +246,17 @@ def train(
     logger.info(f"Scaler saved → {save_dir / 'scaler.pkl'}")
 
     # ── 3. Scale all splits ───────────────────────────────────────────────
-    scaled_train = apply_scaler(window_ds.train_normal, scaler)
-    scaled_test  = apply_scaler(window_ds.test_normal,  scaler)
+    scaled_train  = apply_scaler(window_ds.train_normal,  scaler)
+    scaled_enroll = apply_scaler(window_ds.enroll_normal, scaler)
+    scaled_test   = apply_scaler(window_ds.test_normal,   scaler)
 
-    # Patch scaled records back into a temporary WindowDataset for PairDataset
+    # ── 3b. Carve internal val from the last 10% of each device's train_normal ─
+    actual_train, internal_val = split_internal_val(scaled_train, val_frac=0.10)
+
     scaled_ds = WindowDataset.__new__(WindowDataset)
-    scaled_ds.records        = scaled_train + scaled_test
-    scaled_ds.train_normal   = scaled_train
+    scaled_ds.records        = actual_train + internal_val + scaled_enroll + scaled_test
+    scaled_ds.train_normal   = actual_train
+    scaled_ds.enroll_normal  = internal_val   # internal val — same period as training
     scaled_ds.test_normal    = scaled_test
     scaled_ds.attack_records = apply_scaler(window_ds.attack_records, scaler)
     scaled_ds.device_ids     = window_ds.device_ids
@@ -334,7 +265,7 @@ def train(
 
     # ── 4. Build PairDatasets ─────────────────────────────────────────────
     val_pairs = PairDataset(
-        scaled_ds, split="test",
+        scaled_ds, split="enroll",   # reads scaled_ds.enroll_normal = internal_val
         n_pairs=n_pairs, device_cap=device_cap, seed=0,
     )
 
@@ -344,20 +275,12 @@ def train(
         f"per-epoch sample: {n_pairs:,} | val fixed: {len(val_pairs):,}"
     )
 
-    # val_loader is fixed for the entire run (deterministic evaluation)
     val_loader = DataLoader(
         val_pairs, batch_size=batch_size, shuffle=False,
         num_workers=0, pin_memory=False,
     )
-    # train_loader is rebuilt each epoch with a new seed so the model
-    # never sees the same pair twice — this is the key anti-overfitting measure
-    # for contrastive learning on small datasets.
 
     # ── 5. Build model ────────────────────────────────────────────────────
-    # transformer_layers=1: halves Transformer params (~609k vs 1.1M).
-    # margin=3.0: widens the negative-pair target zone (inter-class dist was
-    # saturating at 0.85 with margin=2.0 — widening gives the loss more
-    # gradient signal to keep pushing different-device embeddings apart).
     model, loss_fn = build_model(transformer_layers=1, margin=3.0)
     model   = model.to(device)
     loss_fn = loss_fn.to(device)
@@ -386,9 +309,7 @@ def train(
     logger.info("-" * 65)
 
     for epoch in range(1, epochs + 1):
-        # Rebuild train pairs each epoch with a fresh seed derived from the
-        # epoch number. This ensures every epoch sees a different sample from
-        # the ~270k+ pair pool — the model cannot memorize pair assignments.
+        # fresh pair sample each epoch so the model sees different combinations
         epoch_pairs = PairDataset(
             scaled_ds, split="train",
             n_pairs=n_pairs, device_cap=device_cap, seed=epoch * 7,

@@ -1,33 +1,11 @@
 """
 NEUROGUARD — Windowing engine and Siamese training pair dataset.
 
-Responsibilities
-----------------
-1. Load train_test_network.csv and group flows by src_ip (device identity).
-2. Slide a 50-flow window with 25-flow stride over each device's flows.
-3. Call extract_features() on each window to produce a 60-dim float32 vector.
-4. Label each window: NORMAL (0) if ALL flows are normal; ATTACK (1) otherwise.
-5. Split normal windows 80/20 per device into train_normal / test_normal.
-6. Generate (anchor, pair, label) tuples for Siamese contrastive training:
-     - label=0 (positive): both windows from the same device → should be close
-     - label=1 (negative): windows from different devices → should be far apart
+Loads train_test_network.csv, slides 50-flow windows over each IoT device's
+flows, extracts 60-dim feature vectors, and builds (anchor, pair, label) tuples
+for Siamese contrastive training.
 
-Design decisions (locked 2026-04-02)
---------------------------------------
-- Window size   : WINDOW_SIZE = 50 flows
-- Window stride : WINDOW_STRIDE = 25 flows (50% overlap)
-- Device identity: src_ip (only 192.168.1.x IPs are IoT devices)
-- Attacker IPs excluded from ALL windows (never appear as normal)
-- Balanced sampling: equal positive and negative pairs per epoch
-- Per-device capped sampling: device .152 has 874 windows → would dominate
-  without a per-device cap. Cap set to DEVICE_SAMPLE_CAP (default 100).
-
-Key classes / functions
------------------------
-  build_windows()  → WindowDataset  (call once, cache to disk)
-  WindowDataset    → holds all WindowRecord objects + split logic
-  PairDataset      → torch.utils.data.Dataset used by DataLoader
-  WindowRecord     → frozen dataclass (device_id, features, label, idx)
+Key classes: build_windows(), WindowDataset, PairDataset, WindowRecord.
 """
 
 # ---------------------------------------------------------------------------
@@ -59,7 +37,9 @@ from src.features.extractor import extract_features, FEATURE_DIM, WINDOW_SIZE
 # ---------------------------------------------------------------------------
 WINDOW_STRIDE: int = 25           # stride between windows (50% overlap)
 LOCAL_IP_PREFIX: str = "192.168.1."  # only this subnet = IoT devices
-TRAIN_SPLIT: float = 0.80         # 80% of normal windows → training
+TRAIN_SPLIT:  float = 0.80        # 80% of normal windows → training (chronological)
+# Remaining 20% is subdivided into:
+ENROLL_FRAC:  float = 0.70        # 70% of remaining 20% → enroll (14% total), rest → test (6%)
 DEVICE_SAMPLE_CAP: int = 100      # max windows sampled per device per epoch
                                   # prevents device .152 (874 windows) from
                                   # dominating pair distribution
@@ -75,15 +55,7 @@ LABEL_ATTACK: int = 1
 
 @dataclass(frozen=True)
 class WindowRecord:
-    """One 50-flow behavioral window for a single device.
-
-    Attributes:
-        device_id:   src_ip string (e.g. '192.168.1.152')
-        features:    float32 numpy array of shape (60,) — the behavioral fingerprint
-        label:       0 = all flows were normal; 1 = any attack flow present
-        window_idx:  sequential index within this device's windows (0-based)
-        flow_start:  row index in the original DataFrame where this window begins
-    """
+    """One 50-flow behavioral window for a single device."""
     device_id:  str
     features:   np.ndarray
     label:      int
@@ -103,10 +75,6 @@ def build_windows(
 ) -> "WindowDataset":
     """Load TON_IoT CSV and extract all behavioral windows for IoT devices.
 
-    This is the entry point for the entire data pipeline. It is the ONLY
-    place where raw CSV rows are read — everything downstream operates on
-    pre-computed feature vectors.
-
     Args:
         csv_path:     Path to train_test_network.csv (utf-8-sig encoded).
         window_size:  Number of flows per window (default: 50).
@@ -115,10 +83,6 @@ def build_windows(
 
     Returns:
         WindowDataset containing all extracted windows.
-
-    Raises:
-        FileNotFoundError: If csv_path does not exist.
-        ValueError: If the CSV has unexpected structure.
     """
     if not csv_path.exists():
         raise FileNotFoundError(f"Dataset not found: {csv_path}")
@@ -205,19 +169,11 @@ def build_windows(
 # ---------------------------------------------------------------------------
 
 class WindowDataset:
-    """Container for all WindowRecord objects with train/test split logic.
+    """Container for all WindowRecord objects with three-way chronological split.
 
-    The split is performed PER DEVICE to ensure every device is represented
-    in both train and test sets. A global random split would risk having
-    some devices appear only in training (leaking identity into the model).
-
-    Attributes:
-        records:         All WindowRecord objects (normal + attack).
-        train_normal:    80% of normal records per device — used for training.
-        test_normal:     20% of normal records per device — used for enrollment.
-        attack_records:  All ATTACK-labeled records — used for evaluation only.
-        device_ids:      Sorted list of device IPs with sufficient windows.
-        device_to_idx:   Maps device_id string → integer class label.
+    Normal windows per device are split chronologically: first 80% → train_normal,
+    next 14% → enroll_normal, last 6% → test_normal. Chronological ordering
+    avoids near-duplicate leakage from the 50%-stride window overlap.
     """
 
     def __init__(self, records: list[WindowRecord], seed: int = 42) -> None:
@@ -232,27 +188,41 @@ class WindowDataset:
         normal_records = [r for r in records if r.label == LABEL_NORMAL]
         self.attack_records = [r for r in records if r.label == LABEL_ATTACK]
 
-        # Per-device 80/20 split of normal windows
-        rng = random.Random(seed)
-        self.train_normal: list[WindowRecord] = []
-        self.test_normal: list[WindowRecord] = []
+        # Three-way chronological split per device (80 / 14 / 6 %)
+        self.train_normal:  list[WindowRecord] = []
+        self.enroll_normal: list[WindowRecord] = []
+        self.test_normal:   list[WindowRecord] = []
 
         for device_id in self.device_ids:
             dev_normal = [r for r in normal_records if r.device_id == device_id]
             if not dev_normal:
                 continue
-            # Shuffle deterministically, then split
-            dev_normal_shuffled = dev_normal.copy()
-            rng.shuffle(dev_normal_shuffled)
-            split_idx = math.floor(len(dev_normal_shuffled) * TRAIN_SPLIT)
-            self.train_normal.extend(dev_normal_shuffled[:split_idx])
-            self.test_normal.extend(dev_normal_shuffled[split_idx:])
+            # Sort chronologically by window_idx (earliest traffic first)
+            dev_sorted = sorted(dev_normal, key=lambda r: r.window_idx)
+            n = len(dev_sorted)
+
+            # Primary split: first 80% → training
+            i_train = math.floor(n * TRAIN_SPLIT)
+            train_w = dev_sorted[:i_train]
+
+            # Secondary split of remaining 20%:
+            # first ENROLL_FRAC (70%) → enroll_normal
+            # rest  → test_normal
+            held_out = dev_sorted[i_train:]
+            i_enroll = math.floor(len(held_out) * ENROLL_FRAC)
+            enroll_w = held_out[:i_enroll]
+            test_w   = held_out[i_enroll:]
+
+            self.train_normal.extend(train_w)
+            self.enroll_normal.extend(enroll_w)
+            self.test_normal.extend(test_w)
 
         logger.info(
-            f"WindowDataset: {len(self.device_ids)} devices, "
-            f"{len(self.train_normal)} train_normal, "
-            f"{len(self.test_normal)} test_normal, "
-            f"{len(self.attack_records)} attack records"
+            f"WindowDataset: {len(self.device_ids)} devices | "
+            f"train_normal={len(self.train_normal)}, "
+            f"enroll_normal={len(self.enroll_normal)}, "
+            f"test_normal={len(self.test_normal)}, "
+            f"attack={len(self.attack_records)}"
         )
 
     # ------------------------------------------------------------------
@@ -261,22 +231,25 @@ class WindowDataset:
 
     def stats(self) -> dict:
         """Return a statistics dictionary for logging and reporting."""
-        normal_total = len(self.train_normal) + len(self.test_normal)
+        normal_total = len(self.train_normal) + len(self.enroll_normal) + len(self.test_normal)
         per_device = {}
         for device_id in self.device_ids:
-            train_n = sum(1 for r in self.train_normal if r.device_id == device_id)
-            test_n  = sum(1 for r in self.test_normal  if r.device_id == device_id)
-            atk_n   = sum(1 for r in self.attack_records if r.device_id == device_id)
+            train_n  = sum(1 for r in self.train_normal  if r.device_id == device_id)
+            enroll_n = sum(1 for r in self.enroll_normal if r.device_id == device_id)
+            test_n   = sum(1 for r in self.test_normal   if r.device_id == device_id)
+            atk_n    = sum(1 for r in self.attack_records if r.device_id == device_id)
             per_device[device_id] = {
-                "train_normal": train_n,
-                "test_normal":  test_n,
-                "attack":       atk_n,
+                "train_normal":  train_n,
+                "enroll_normal": enroll_n,
+                "test_normal":   test_n,
+                "attack":        atk_n,
             }
         return {
             "total_windows":    len(self.records),
             "normal_windows":   normal_total,
             "attack_windows":   len(self.attack_records),
             "train_normal":     len(self.train_normal),
+            "enroll_normal":    len(self.enroll_normal),
             "test_normal":      len(self.test_normal),
             "num_devices":      len(self.device_ids),
             "per_device":       per_device,
@@ -286,12 +259,17 @@ class WindowDataset:
         """Compute exact pair counts for a given split.
 
         Args:
-            split: 'train' or 'test'
+            split: 'train', 'enroll', or 'test'
 
         Returns:
             Dict with keys 'positive', 'negative', 'total', 'balanced_total'.
         """
-        pool = self.train_normal if split == "train" else self.test_normal
+        if split == "train":
+            pool = self.train_normal
+        elif split == "enroll":
+            pool = self.enroll_normal
+        else:
+            pool = self.test_normal
         per_device: dict[str, list] = {}
         for r in pool:
             per_device.setdefault(r.device_id, []).append(r)
@@ -335,29 +313,17 @@ class WindowDataset:
 # ---------------------------------------------------------------------------
 
 class PairDataset(Dataset):
-    """PyTorch Dataset that yields (anchor, pair, label) tuples.
+    """PyTorch Dataset yielding (anchor, pair, label) tuples for contrastive training.
 
-    Each item is a Siamese training sample:
-        anchor : float32 tensor (60,) — behavioral fingerprint of window A
-        pair   : float32 tensor (60,) — behavioral fingerprint of window B
-        label  : float32 scalar — 0.0 = same device, 1.0 = different device
-
-    Sampling strategy
-    -----------------
-    To prevent device .152 (874 windows) from dominating the pair distribution,
-    we cap each device to DEVICE_SAMPLE_CAP windows when building the pool.
-    This ensures all 17 devices contribute equally to pair generation.
-
-    The pair list is pre-generated at construction time for reproducibility
-    and to allow DataLoader num_workers > 0 (shared memory safe).
+    label=0.0 means same device (positive), label=1.0 means different devices (negative).
+    Pairs are pre-generated at construction for reproducibility.
 
     Args:
         window_dataset: A WindowDataset instance.
-        split:          'train' or 'test' — which normal pool to sample from.
-        n_pairs:        Total number of (anchor, pair) tuples to generate.
-                        Default: min(pos, neg) * 2 (balanced).
-        device_cap:     Max windows per device to include in the pool.
-        seed:           Random seed for reproducibility.
+        split:          'train', 'enroll', or 'test'.
+        n_pairs:        Total pairs to sample (default: balanced min(pos, neg) * 2).
+        device_cap:     Max windows per device to cap high-volume devices.
+        seed:           Random seed.
     """
 
     def __init__(
@@ -371,10 +337,12 @@ class PairDataset(Dataset):
         super().__init__()
         self.feature_dim = FEATURE_DIM
 
-        pool = (
-            window_dataset.train_normal if split == "train"
-            else window_dataset.test_normal
-        )
+        if split == "train":
+            pool = window_dataset.train_normal
+        elif split == "enroll":
+            pool = window_dataset.enroll_normal
+        else:
+            pool = window_dataset.test_normal
 
         # Build per-device pool with cap
         per_device: dict[str, list[WindowRecord]] = {}
