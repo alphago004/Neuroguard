@@ -1,47 +1,9 @@
 """
 NEUROGUARD — Device DNA enrollment.
 
-Enrollment converts a set of known-normal windows for a device into a
-DeviceDNA: a compact statistical summary of that device's embedding
-distribution. The scorer then measures how far a new window's embedding
-sits from this distribution to produce an anomaly score.
-
-What is DeviceDNA?
-------------------
-  centroid          : mean of all enrolled embeddings (shape 64,)
-                      The "center of gravity" of normal behavior.
-  sigma             : per-dimension std dev of enrolled embeddings
-                      Used to build a Mahalanobis-style distance.
-  threshold_distance: cosine distance above which we fire an ALERT.
-                      Set at mean + k*std of enrollment distances, where
-                      k=2.5 (captures 99%+ of normal under Gaussian
-                      assumption with a comfortable buffer).
-  n_windows         : number of windows used — needed to judge DNA quality.
-                      DNA from 3 windows is far less reliable than 50.
-
-Distance metric: cosine distance
----------------------------------
-We use cosine distance (1 - cosine_similarity) rather than Euclidean
-for scoring. Reason: during enrollment we L2-normalize all embeddings,
-so every embedding lives on the unit hypersphere. Cosine distance on the
-unit sphere is equivalent to angular distance — it is invariant to
-embedding magnitude and focuses purely on direction.
-
-Threshold calibration
----------------------
-  1. Embed all normal windows → emb_i  (shape N×64, L2-normalized)
-  2. Compute cosine distance from each emb_i to the centroid
-  3. threshold = mean(distances) + k * std(distances), k=2.5
-     This ensures < 1% false-positive rate under Gaussian assumption.
-  4. Clip threshold to [MIN_THRESHOLD, MAX_THRESHOLD] to handle
-     pathological cases (1-window enrollment, perfectly identical windows).
-
-Persistence
------------
-DNA objects are pickled to data/processed/dna/<device_id>.pkl so the
-system survives restarts without re-enrolling. The enrollment timestamp
-is stored for drift monitoring (drift.py compares current centroid vs
-enrolled centroid over time).
+Converts known-normal windows for a device into a DeviceDNA: the mean
+embedding (centroid), per-dimension std, and a cosine-distance threshold
+calibrated at mean + 2.5σ of enrollment distances.
 """
 
 # ---------------------------------------------------------------------------
@@ -49,7 +11,7 @@ enrolled centroid over time).
 # ---------------------------------------------------------------------------
 import pickle
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -85,19 +47,7 @@ CHECKPOINT_DIR = Path(__file__).resolve().parents[2] / "models" / "checkpoints"
 
 @dataclass
 class DeviceDNA:
-    """Statistical fingerprint of one IoT device's normal behavior.
-
-    Attributes:
-        device_id:          Source IP or logical device name.
-        centroid:           L2-normalized mean embedding (64,).
-        sigma:              Per-dimension std dev of embeddings (64,).
-                            Used for Mahalanobis fallback in drift.py.
-        threshold_distance: Cosine distance above which scorer fires ALERT.
-        n_windows:          Number of normal windows used for enrollment.
-        enrolled_at:        UTC timestamp of enrollment.
-        embedding_distances: Sorted cosine distances of enrolled windows
-                             from centroid — used for threshold visualization.
-    """
+    """Statistical fingerprint of one IoT device's normal behavior."""
     device_id:           str
     centroid:            np.ndarray      # (64,) L2-normalized
     sigma:               np.ndarray      # (64,)
@@ -218,30 +168,15 @@ def enroll_device(
 ) -> DeviceDNA:
     """Create a DeviceDNA fingerprint from known-normal windows.
 
-    This is the ONLY function that should be called with normal traffic
-    data. Attack windows must never be passed here.
-
-    Algorithm
-    ---------
-    1. Embed all normal windows → emb_i  (N × 64, L2-normalized)
-    2. centroid = mean(emb_i), then L2-normalize centroid
-    3. sigma = std(emb_i, axis=0)
-    4. dist_i = cosine_distance(emb_i, centroid)  for each window
-    5. threshold = mean(dist_i) + k_sigma * std(dist_i)
-    6. Clip threshold to [MIN_THRESHOLD, MAX_THRESHOLD]
+    Embeds all records, computes centroid and per-dim sigma, then sets
+    threshold = mean(cosine_dist) + k_sigma * std(cosine_dist).
 
     Args:
-        device_id:       Device identifier string (e.g. '192.168.1.152').
+        device_id:       Device identifier (e.g. '192.168.1.152').
         normal_records:  WindowRecords with label=0 and SCALED features.
         checkpoint_path: Path to best_model.pt.
-        k_sigma:         Threshold sensitivity multiplier (default: 2.5).
-        save:            If True, pickle DNA to DNA_DIR/<device_id>.pkl.
-
-    Returns:
-        DeviceDNA instance.
-
-    Raises:
-        ValueError: If normal_records is empty.
+        k_sigma:         Threshold multiplier (default: 2.5).
+        save:            Pickle DNA to DNA_DIR/<device_id>.pkl if True.
     """
     if not normal_records:
         raise ValueError(f"Cannot enroll {device_id}: no normal records provided")
@@ -283,7 +218,7 @@ def enroll_device(
         sigma=sigma.astype(np.float32),
         threshold_distance=threshold,
         n_windows=len(normal_records),
-        enrolled_at=datetime.utcnow(),
+        enrolled_at=datetime.now(timezone.utc),
         embedding_distances=np.sort(distances).astype(np.float32),
     )
 
@@ -308,25 +243,11 @@ def enroll_all_devices(
     scaler,                    # fitted RobustScaler
     checkpoint_path: Path = CHECKPOINT_DIR / "best_model.pt",
 ) -> dict[str, DeviceDNA]:
-    """Enroll all devices using their test_normal (held-out) windows.
-
-    Uses test_normal (not train_normal) for enrollment, matching the
-    evaluation protocol in CLAUDE.md §11:
-      Step 5 — Enroll devices using test_normal (held-out normal windows)
-
-    Args:
-        window_dataset:  WindowDataset with test_normal populated.
-        scaler:          Fitted RobustScaler (from training).
-        checkpoint_path: Path to best_model.pt.
-
-    Returns:
-        Dict mapping device_id → DeviceDNA.
-    """
+    """Enroll all devices using their enroll_normal windows and return a device_id → DeviceDNA map."""
     from src.training.dataset import WindowRecord, LABEL_NORMAL
-    from sklearn.preprocessing import RobustScaler
 
-    # Scale test_normal features
-    records = window_dataset.test_normal
+    # Scale enroll_normal features
+    records = window_dataset.enroll_normal
     features_raw = np.stack([r.features for r in records])
     features_scaled = scaler.transform(features_raw).astype(np.float32)
 
@@ -350,7 +271,7 @@ def enroll_all_devices(
     for device_id, dev_records in sorted(per_device.items()):
         normal_only = [r for r in dev_records if r.label == LABEL_NORMAL]
         if not normal_only:
-            logger.warning(f"Device {device_id}: no normal test windows — skipping enrollment")
+            logger.warning(f"Device {device_id}: no enroll_normal windows — skipping enrollment")
             continue
         dna_map[device_id] = enroll_device(
             device_id=device_id,
