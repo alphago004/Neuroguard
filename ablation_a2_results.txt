@@ -1,0 +1,14 @@
+ABLATION A2 - MARGIN=2.0
+best_epoch: 93
+best_val_loss: 0.066564
+intra_mean: 0.1643
+inter_mean: 2.8350
+separation_ratio: 17.2578
+roc_auc: 0.9934
+tpr_25: 0.9976
+fpr_25: 0.0000
+f1_25: 0.9988
+tpr_30: 0.9976
+fpr_30: 0.0000
+f1_30: 0.9988
+total_time_s: 236.3
